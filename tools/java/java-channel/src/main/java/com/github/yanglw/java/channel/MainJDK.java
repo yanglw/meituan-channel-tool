@@ -43,7 +43,7 @@ public class MainJDK
         {
             // 将源 apk 文件的信息读入内存当做缓存。
             ZipFile zipFile = new ZipFile(file);
-            Map<String, byte[]> data = new LinkedHashMap<>();
+            Map<ZipEntry, byte[]> data = new LinkedHashMap<>();
             ByteArrayOutputStream out = new ByteArrayOutputStream();
             Enumeration<? extends ZipEntry> entries = zipFile.entries();
 
@@ -53,7 +53,7 @@ public class MainJDK
                 InputStream inputStream = zipFile.getInputStream(zipEntry);
                 IOUtil.copy(inputStream, out);
                 IOUtil.close(inputStream);
-                data.put(zipEntry.getName(), out.toByteArray());
+                data.put(zipEntry, out.toByteArray());
                 out.reset();
             }
             IOUtil.close(zipFile);
@@ -69,13 +69,32 @@ public class MainJDK
                 ByteArrayOutputStream newDate = new ByteArrayOutputStream();
                 ZipOutputStream zipOutputStream = new ZipOutputStream(new BufferedOutputStream(newDate));
                 // 首先将渠道文件信息写入内存中的渠道 apk ，这样 Android 客户端会首先读取到这个渠道信息文件。
-                zipOutputStream.putNextEntry(new ZipEntry(ChannelUtil.META_INF + channelFileName));
+                ZipEntry zipEntry = new ZipEntry(ChannelUtil.META_INF + channelFileName);
+                zipEntry.setSize(0);
+                zipEntry.setCompressedSize(0);
+                zipEntry.setMethod(ZipEntry.STORED);
+                zipEntry.setCrc(0);
+                zipOutputStream.putNextEntry(zipEntry);
                 zipOutputStream.closeEntry();
                 // 将源 apk 文件的内容写入内存中的渠道 apk 。
-                for (Map.Entry<String, byte[]> entry : data.entrySet())
+                for (Map.Entry<ZipEntry, byte[]> entry : data.entrySet())
                 {
-                    zipOutputStream.putNextEntry(new ZipEntry(entry.getKey()));
-                    zipOutputStream.write(entry.getValue());
+                    ZipEntry oldZipEntry = entry.getKey();
+                    ZipEntry newZipEntry = new ZipEntry(oldZipEntry);
+
+                    byte[] values = entry.getValue();
+
+                    if (newZipEntry.getMethod() == ZipEntry.DEFLATED)
+                    {
+                        newZipEntry.setCompressedSize(-1);
+                        zipOutputStream.setLevel(9);
+                    }
+                    else
+                    {
+                        zipOutputStream.setLevel(0);
+                    }
+                    zipOutputStream.putNextEntry(newZipEntry);
+                    zipOutputStream.write(values);
                     zipOutputStream.closeEntry();
                 }
                 IOUtil.close(zipOutputStream);
